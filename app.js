@@ -14,11 +14,15 @@ const state = {
   events: [],
   currentDate: new Date(),
   view: "month",
-  notifiedKeys: new Set()
+  notifiedKeys: new Set(),
+  demoMode: true
 };
+
+const DEMO_STORAGE_KEY = "game-friend-calendar-demo-events";
 
 const els = {
   authStatus: document.querySelector("#authStatus"),
+  modeMessage: document.querySelector("#modeMessage"),
   loginOpenBtn: document.querySelector("#loginOpenBtn"),
   logoutBtn: document.querySelector("#logoutBtn"),
   loginDialog: document.querySelector("#loginDialog"),
@@ -63,12 +67,14 @@ async function init() {
 
   if (!supabaseClient) {
     setLoggedOut("Supabase未設定");
+    loadDemoEvents();
     render();
     return;
   }
 
   const { data } = await supabaseClient.auth.getSession();
   state.user = data.session?.user || null;
+  state.demoMode = !state.user;
   updateAuthUi();
 
   supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -136,11 +142,13 @@ async function handleLogout() {
 
 async function loadEvents() {
   if (!supabaseClient || !state.user) {
-    state.events = [];
+    state.demoMode = true;
+    loadDemoEvents();
     render();
     return;
   }
 
+  state.demoMode = false;
   const { data, error } = await supabaseClient
     .from("friend_events")
     .select("*")
@@ -159,7 +167,6 @@ async function loadEvents() {
 
 async function handleSaveEvent(event) {
   event.preventDefault();
-  if (!ensureLogin()) return;
 
   const payload = {
     event_date: els.eventDate.value,
@@ -167,10 +174,17 @@ async function handleSaveEvent(event) {
     end_time: els.endTime.value || null,
     friend_name: els.friendName.value.trim(),
     memo: els.memo.value.trim(),
-    reminder_minutes: Number(els.reminderMinutes.value),
-    user_id: state.user.id
+    reminder_minutes: Number(els.reminderMinutes.value)
   };
 
+  if (state.demoMode) {
+    saveDemoEvent(payload);
+    els.eventDialog.close();
+    render();
+    return;
+  }
+
+  payload.user_id = state.user.id;
   const id = els.eventId.value;
   const request = id
     ? supabaseClient.from("friend_events").update(payload).eq("id", id).eq("user_id", state.user.id)
@@ -187,9 +201,16 @@ async function handleSaveEvent(event) {
 }
 
 async function handleDeleteEvent() {
-  if (!ensureLogin()) return;
   const id = els.eventId.value;
   if (!id || !confirm("この予定を削除しますか？")) return;
+
+  if (state.demoMode) {
+    state.events = state.events.filter((event) => event.id !== id);
+    persistDemoEvents();
+    els.eventDialog.close();
+    render();
+    return;
+  }
 
   const { error } = await supabaseClient
     .from("friend_events")
@@ -207,8 +228,8 @@ async function handleDeleteEvent() {
 }
 
 function ensureLogin() {
-  if (supabaseClient && state.user) return true;
-  alert("先にログインしてください。");
+  if (state.demoMode || (supabaseClient && state.user)) return true;
+  alert("ログインするか、デモモードで確認してください。");
   return false;
 }
 
@@ -220,13 +241,62 @@ function setLoggedOut(label = "未ログイン") {
 
 function updateAuthUi() {
   if (!state.user) {
+    state.demoMode = true;
     setLoggedOut();
+    updateModeMessage();
     return;
   }
+  state.demoMode = false;
   els.authStatus.textContent = state.user.email || "ログイン中";
   els.loginOpenBtn.classList.add("hidden");
   els.logoutBtn.classList.remove("hidden");
   els.loginDialog.close();
+  updateModeMessage();
+}
+
+function updateModeMessage() {
+  if (state.demoMode) {
+    els.modeMessage.textContent = "デモモード: この端末のブラウザだけに保存されます。ログインするとPC/スマホ同期になります。";
+    els.modeMessage.classList.remove("hidden");
+    return;
+  }
+  els.modeMessage.textContent = "";
+  els.modeMessage.classList.add("hidden");
+}
+
+function loadDemoEvents() {
+  try {
+    state.events = JSON.parse(localStorage.getItem(DEMO_STORAGE_KEY) || "[]");
+  } catch (_error) {
+    state.events = [];
+  }
+  updateModeMessage();
+}
+
+function saveDemoEvent(payload) {
+  const id = els.eventId.value || crypto.randomUUID();
+  const now = new Date().toISOString();
+  const nextEvent = {
+    ...payload,
+    id,
+    user_id: "demo",
+    created_at: now,
+    updated_at: now
+  };
+
+  const index = state.events.findIndex((event) => event.id === id);
+  if (index >= 0) {
+    nextEvent.created_at = state.events[index].created_at || now;
+    state.events[index] = nextEvent;
+  } else {
+    state.events.push(nextEvent);
+  }
+  persistDemoEvents();
+}
+
+function persistDemoEvents() {
+  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state.events));
+  state.notifiedKeys.clear();
 }
 
 function setView(view) {

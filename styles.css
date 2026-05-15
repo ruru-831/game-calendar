@@ -283,6 +283,17 @@ h2 {
   line-height: 1.6;
 }
 
+.mode-message {
+  margin: 0 0 12px;
+  padding: 9px 10px;
+  border: 1px solid #f0d4a8;
+  border-radius: 6px;
+  background: #fff7e8;
+  color: #7a4b10;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .event-list {
   display: flex;
   flex-direction: column;
