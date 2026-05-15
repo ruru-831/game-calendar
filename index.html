@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Game Friend Calendar</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Friend Schedule</p>
+          <h1>Game Friend Calendar</h1>
+        </div>
+        <div class="auth-panel">
+          <span id="authStatus" class="auth-status">未ログイン</span>
+          <button id="loginOpenBtn" class="button primary">ログイン</button>
+          <button id="logoutBtn" class="button ghost hidden">ログアウト</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="calendar-section">
+          <div class="toolbar">
+            <div class="nav-controls">
+              <button id="prevBtn" class="icon-button" aria-label="前へ">‹</button>
+              <button id="todayBtn" class="button subtle">今日</button>
+              <button id="nextBtn" class="icon-button" aria-label="次へ">›</button>
+            </div>
+            <h2 id="periodTitle">-</h2>
+            <div class="view-switch" aria-label="表示切替">
+              <button id="monthViewBtn" class="segmented active">月</button>
+              <button id="weekViewBtn" class="segmented">週</button>
+            </div>
+          </div>
+
+          <div id="calendarRoot" class="calendar-root" aria-live="polite"></div>
+        </section>
+
+        <aside class="side-panel">
+          <section class="panel today-panel">
+            <div class="panel-heading">
+              <h2>今日の予定</h2>
+              <button id="newEventBtn" class="button primary">予定追加</button>
+            </div>
+            <div id="todayList" class="event-list empty">予定はありません</div>
+          </section>
+
+          <section class="panel">
+            <h2>日付検索</h2>
+            <div class="search-row">
+              <input id="searchDate" type="date" />
+              <button id="searchBtn" class="button subtle">検索</button>
+            </div>
+            <div id="searchResult" class="event-list empty">日付を選んでください</div>
+          </section>
+
+          <section class="panel">
+            <h2>通知</h2>
+            <p class="muted">アプリを開いている間、予定時刻の少し前にブラウザ通知します。</p>
+            <div class="search-row">
+              <select id="reminderMinutes">
+                <option value="0">予定時刻</option>
+                <option value="5" selected>5分前</option>
+                <option value="10">10分前</option>
+                <option value="30">30分前</option>
+                <option value="60">1時間前</option>
+              </select>
+              <button id="notificationBtn" class="button subtle">通知を許可</button>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="eventDialog" class="dialog">
+      <form id="eventForm" method="dialog">
+        <div class="dialog-header">
+          <h2 id="dialogTitle">予定追加</h2>
+          <button type="button" id="closeDialogBtn" class="icon-button" aria-label="閉じる">×</button>
+        </div>
+        <input id="eventId" type="hidden" />
+        <label>
+          日付
+          <input id="eventDate" type="date" required />
+        </label>
+        <div class="two-cols">
+          <label>
+            開始時間
+            <input id="startTime" type="time" required />
+          </label>
+          <label>
+            終了時間
+            <input id="endTime" type="time" />
+          </label>
+        </div>
+        <label>
+          誰とやるか
+          <input id="friendName" type="text" maxlength="80" placeholder="例: Taro, guild members" required />
+        </label>
+        <label>
+          メモ
+          <textarea id="memo" rows="4" maxlength="500" placeholder="ゲーム名、集合場所、VCなど"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="deleteEventBtn" class="button danger hidden">削除</button>
+          <button type="submit" class="button primary">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="loginDialog" class="dialog small">
+      <form id="loginForm" method="dialog">
+        <div class="dialog-header">
+          <h2>ログイン</h2>
+          <button type="button" id="closeLoginBtn" class="icon-button" aria-label="閉じる">×</button>
+        </div>
+        <p class="muted">メールアドレスに届くリンクからログインします。</p>
+        <label>
+          メールアドレス
+          <input id="emailInput" type="email" placeholder="you@example.com" required />
+        </label>
+        <button type="submit" class="button primary full">ログインリンクを送信</button>
+        <p id="loginMessage" class="form-message"></p>
+      </form>
+    </dialog>
+
+    <template id="eventTemplate">
+      <article class="event-item">
+        <div>
+          <strong class="event-time"></strong>
+          <span class="event-friend"></span>
+        </div>
+        <p class="event-memo"></p>
+      </article>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
