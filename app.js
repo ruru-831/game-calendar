@@ -1,35 +1,13 @@
-const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG || {};
-const supabaseReady =
-  SUPABASE_URL &&
-  SUPABASE_ANON_KEY &&
-  !SUPABASE_URL.includes("YOUR_PROJECT_ID") &&
-  !SUPABASE_ANON_KEY.includes("YOUR_SUPABASE");
-
-const supabaseClient = supabaseReady
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+const STORAGE_KEY = "game-friend-calendar-events";
 
 const state = {
-  user: null,
   events: [],
   currentDate: new Date(),
   view: "month",
-  notifiedKeys: new Set(),
-  demoMode: true
+  notifiedKeys: new Set()
 };
 
-const DEMO_STORAGE_KEY = "game-friend-calendar-demo-events";
-
 const els = {
-  authStatus: document.querySelector("#authStatus"),
-  modeMessage: document.querySelector("#modeMessage"),
-  loginOpenBtn: document.querySelector("#loginOpenBtn"),
-  logoutBtn: document.querySelector("#logoutBtn"),
-  loginDialog: document.querySelector("#loginDialog"),
-  loginForm: document.querySelector("#loginForm"),
-  closeLoginBtn: document.querySelector("#closeLoginBtn"),
-  emailInput: document.querySelector("#emailInput"),
-  loginMessage: document.querySelector("#loginMessage"),
   prevBtn: document.querySelector("#prevBtn"),
   nextBtn: document.querySelector("#nextBtn"),
   todayBtn: document.querySelector("#todayBtn"),
@@ -61,37 +39,15 @@ const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
 init();
 
-async function init() {
+function init() {
+  loadEvents();
   bindEvents();
   setDefaultDates();
-
-  if (!supabaseClient) {
-    setLoggedOut("Supabase未設定");
-    loadDemoEvents();
-    render();
-    return;
-  }
-
-  const { data } = await supabaseClient.auth.getSession();
-  state.user = data.session?.user || null;
-  state.demoMode = !state.user;
-  updateAuthUi();
-
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    state.user = session?.user || null;
-    updateAuthUi();
-    loadEvents();
-  });
-
-  await loadEvents();
+  render();
   setInterval(checkReminders, 30000);
 }
 
 function bindEvents() {
-  els.loginOpenBtn.addEventListener("click", () => els.loginDialog.showModal());
-  els.closeLoginBtn.addEventListener("click", () => els.loginDialog.close());
-  els.loginForm.addEventListener("submit", handleLogin);
-  els.logoutBtn.addEventListener("click", handleLogout);
   els.prevBtn.addEventListener("click", () => movePeriod(-1));
   els.nextBtn.addEventListener("click", () => movePeriod(1));
   els.todayBtn.addEventListener("click", () => {
@@ -115,188 +71,57 @@ function setDefaultDates() {
   els.eventDate.value = today;
 }
 
-async function handleLogin(event) {
-  event.preventDefault();
-  if (!supabaseClient) {
-    els.loginMessage.textContent = "config.jsにSupabase設定を入力してください。";
-    return;
+function loadEvents() {
+  try {
+    state.events = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  } catch (_error) {
+    state.events = [];
   }
-
-  els.loginMessage.textContent = "送信中...";
-  const email = els.emailInput.value.trim();
-  const { error } = await supabaseClient.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: window.location.origin
-    }
-  });
-
-  els.loginMessage.textContent = error
-    ? `送信に失敗しました: ${error.message}`
-    : "ログインリンクをメールに送信しました。";
 }
 
-async function handleLogout() {
-  await supabaseClient.auth.signOut();
+function persistEvents() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.events));
+  state.notifiedKeys.clear();
 }
 
-async function loadEvents() {
-  if (!supabaseClient || !state.user) {
-    state.demoMode = true;
-    loadDemoEvents();
-    render();
-    return;
-  }
-
-  state.demoMode = false;
-  const { data, error } = await supabaseClient
-    .from("friend_events")
-    .select("*")
-    .eq("user_id", state.user.id)
-    .order("event_date", { ascending: true })
-    .order("start_time", { ascending: true });
-
-  if (error) {
-    alert(`予定の読み込みに失敗しました: ${error.message}`);
-    return;
-  }
-
-  state.events = data || [];
-  render();
-}
-
-async function handleSaveEvent(event) {
+function handleSaveEvent(event) {
   event.preventDefault();
 
-  const payload = {
+  const id = els.eventId.value || crypto.randomUUID();
+  const now = new Date().toISOString();
+  const nextEvent = {
+    id,
     event_date: els.eventDate.value,
     start_time: els.startTime.value || null,
     end_time: els.endTime.value || null,
     friend_name: els.friendName.value.trim(),
     memo: els.memo.value.trim(),
-    reminder_minutes: Number(els.reminderMinutes.value)
-  };
-
-  if (state.demoMode) {
-    saveDemoEvent(payload);
-    els.eventDialog.close();
-    render();
-    return;
-  }
-
-  payload.user_id = state.user.id;
-  const id = els.eventId.value;
-  const request = id
-    ? supabaseClient.from("friend_events").update(payload).eq("id", id).eq("user_id", state.user.id)
-    : supabaseClient.from("friend_events").insert(payload);
-
-  const { error } = await request;
-  if (error) {
-    alert(`保存に失敗しました: ${error.message}`);
-    return;
-  }
-
-  els.eventDialog.close();
-  await loadEvents();
-}
-
-async function handleDeleteEvent() {
-  const id = els.eventId.value;
-  if (!id || !confirm("この予定を削除しますか？")) return;
-
-  if (state.demoMode) {
-    state.events = state.events.filter((event) => event.id !== id);
-    persistDemoEvents();
-    els.eventDialog.close();
-    render();
-    return;
-  }
-
-  const { error } = await supabaseClient
-    .from("friend_events")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", state.user.id);
-
-  if (error) {
-    alert(`削除に失敗しました: ${error.message}`);
-    return;
-  }
-
-  els.eventDialog.close();
-  await loadEvents();
-}
-
-function ensureLogin() {
-  if (state.demoMode || (supabaseClient && state.user)) return true;
-  alert("ログインするか、デモモードで確認してください。");
-  return false;
-}
-
-function setLoggedOut(label = "未ログイン") {
-  els.authStatus.textContent = label;
-  els.loginOpenBtn.classList.remove("hidden");
-  els.logoutBtn.classList.add("hidden");
-}
-
-function updateAuthUi() {
-  if (!state.user) {
-    state.demoMode = true;
-    setLoggedOut();
-    updateModeMessage();
-    return;
-  }
-  state.demoMode = false;
-  els.authStatus.textContent = state.user.email || "ログイン中";
-  els.loginOpenBtn.classList.add("hidden");
-  els.logoutBtn.classList.remove("hidden");
-  els.loginDialog.close();
-  updateModeMessage();
-}
-
-function updateModeMessage() {
-  if (state.demoMode) {
-    els.modeMessage.textContent = "デモモード: この端末のブラウザだけに保存されます。ログインするとPC/スマホ同期になります。";
-    els.modeMessage.classList.remove("hidden");
-    return;
-  }
-  els.modeMessage.textContent = "";
-  els.modeMessage.classList.add("hidden");
-}
-
-function loadDemoEvents() {
-  try {
-    state.events = JSON.parse(localStorage.getItem(DEMO_STORAGE_KEY) || "[]");
-  } catch (_error) {
-    state.events = [];
-  }
-  updateModeMessage();
-}
-
-function saveDemoEvent(payload) {
-  const id = els.eventId.value || crypto.randomUUID();
-  const now = new Date().toISOString();
-  const nextEvent = {
-    ...payload,
-    id,
-    user_id: "demo",
+    reminder_minutes: Number(els.reminderMinutes.value),
     created_at: now,
     updated_at: now
   };
 
-  const index = state.events.findIndex((event) => event.id === id);
+  const index = state.events.findIndex((item) => item.id === id);
   if (index >= 0) {
     nextEvent.created_at = state.events[index].created_at || now;
     state.events[index] = nextEvent;
   } else {
     state.events.push(nextEvent);
   }
-  persistDemoEvents();
+
+  persistEvents();
+  els.eventDialog.close();
+  render();
 }
 
-function persistDemoEvents() {
-  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state.events));
-  state.notifiedKeys.clear();
+function handleDeleteEvent() {
+  const id = els.eventId.value;
+  if (!id || !confirm("この予定を削除しますか？")) return;
+
+  state.events = state.events.filter((item) => item.id !== id);
+  persistEvents();
+  els.eventDialog.close();
+  render();
 }
 
 function setView(view) {
@@ -413,8 +238,7 @@ function createDayCell(date, isMuted) {
 }
 
 function renderToday() {
-  const today = toDateKey(new Date());
-  renderEventList(els.todayList, getEventsByDate(today));
+  renderEventList(els.todayList, getEventsByDate(toDateKey(new Date())));
 }
 
 function renderSearch() {
@@ -464,8 +288,6 @@ function renderEventList(root, items) {
 }
 
 function openEventDialog(dateKey, item = null) {
-  if (!ensureLogin()) return;
-
   els.dialogTitle.textContent = item ? "予定編集" : "予定追加";
   els.eventId.value = item?.id || "";
   els.eventDate.value = item?.event_date || dateKey;
@@ -488,6 +310,7 @@ async function requestNotificationPermission() {
     alert("このブラウザは通知に対応していません。");
     return;
   }
+
   const result = await Notification.requestPermission();
   alert(result === "granted" ? "通知を許可しました。" : "通知は許可されませんでした。");
 }

@@ -76,7 +76,6 @@ h2 {
   font-size: 18px;
 }
 
-.auth-panel,
 .toolbar,
 .nav-controls,
 .view-switch,
@@ -86,11 +85,6 @@ h2 {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.auth-status {
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .layout {
@@ -160,10 +154,6 @@ h2 {
   border-color: var(--danger);
   background: var(--danger);
   color: #fff;
-}
-
-.button.full {
-  width: 100%;
 }
 
 .icon-button {
@@ -377,10 +367,6 @@ label {
   box-shadow: var(--shadow);
 }
 
-.dialog.small {
-  width: min(420px, calc(100% - 24px));
-}
-
 .dialog::backdrop {
   background: rgba(12, 22, 31, 0.45);
 }
@@ -408,12 +394,6 @@ label {
 
 .two-cols {
   align-items: start;
-}
-
-.form-message {
-  min-height: 20px;
-  color: var(--primary);
-  font-size: 14px;
 }
 
 @media (max-width: 980px) {

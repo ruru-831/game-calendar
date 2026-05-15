@@ -13,11 +13,6 @@
           <p class="eyebrow">Friend Schedule</p>
           <h1>Game Friend Calendar</h1>
         </div>
-        <div class="auth-panel">
-          <span id="authStatus" class="auth-status">未ログイン</span>
-          <button id="loginOpenBtn" class="button primary">ログイン</button>
-          <button id="logoutBtn" class="button ghost hidden">ログアウト</button>
-        </div>
       </header>
 
       <main class="layout">
@@ -44,7 +39,7 @@
               <h2>今日の予定</h2>
               <button id="newEventBtn" class="button primary">予定追加</button>
             </div>
-            <p id="modeMessage" class="mode-message">ログイン前はデモモードで保存されます。</p>
+            <p class="mode-message">予定はこの端末のブラウザ内に保存されます。</p>
             <div id="todayList" class="event-list empty">予定はありません</div>
           </section>
 
@@ -111,22 +106,6 @@
       </form>
     </dialog>
 
-    <dialog id="loginDialog" class="dialog small">
-      <form id="loginForm" method="dialog">
-        <div class="dialog-header">
-          <h2>ログイン</h2>
-          <button type="button" id="closeLoginBtn" class="icon-button" aria-label="閉じる">×</button>
-        </div>
-        <p class="muted">メールアドレスに届くリンクからログインします。</p>
-        <label>
-          メールアドレス
-          <input id="emailInput" type="email" placeholder="you@example.com" required />
-        </label>
-        <button type="submit" class="button primary full">ログインリンクを送信</button>
-        <p id="loginMessage" class="form-message"></p>
-      </form>
-    </dialog>
-
     <template id="eventTemplate">
       <article class="event-item">
         <div>
@@ -137,8 +116,6 @@
       </article>
     </template>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

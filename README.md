@@ -1,34 +1,34 @@
 # Game Friend Calendar
 
 HTML/CSS/JavaScriptだけで作った、1人用のフレンド予定カレンダーです。
-Supabaseに予定を保存するので、PCとスマホで同じ予定を見られます。
+ログインなしで使えます。予定はその端末のブラウザ内に保存されます。
 
 ## ファイル構成
 
 - `index.html`: 画面
 - `styles.css`: 見た目
-- `app.js`: カレンダー、ログイン、予定管理、通知
-- `config.js`: Supabaseの接続情報
-- `config.example.js`: 設定例
-- `supabase.sql`: Supabaseに作るテーブルとセキュリティ設定
+- `app.js`: カレンダー、予定管理、通知
 - `vercel.json`: Vercel用設定
 
-## Supabase設定
+## できること
 
-1. Supabaseで新しいProjectを作成します。
-2. SupabaseのSQL Editorを開きます。
-3. `supabase.sql` の内容を貼り付けて実行します。
-4. Project Settings > API から `Project URL` と `anon public key` を確認します。
-5. `config.js` を開いて、次の2つを差し替えます。
+- 月間カレンダー
+- 週間カレンダー
+- 今日の予定
+- 日付検索
+- 予定の追加、編集、削除
+- ブラウザを開いている間の通知
 
-```js
-window.APP_CONFIG = {
-  SUPABASE_URL: "https://YOUR_PROJECT_ID.supabase.co",
-  SUPABASE_ANON_KEY: "YOUR_SUPABASE_ANON_KEY"
-};
-```
+## 保存について
 
-6. Authentication > URL Configuration で、公開後のVercel URLをSite URLに設定します。
+予定は `localStorage` に保存されます。
+そのため、同じ端末の同じブラウザでは予定が残ります。
+
+注意点:
+
+- PCとスマホでは同期されません。
+- 別のブラウザには予定は引き継がれません。
+- ブラウザのデータを削除すると予定も消えます。
 
 ## ローカル確認
 
@@ -40,24 +40,15 @@ python -m http.server 5173
 
 ブラウザで `http://localhost:5173` を開きます。
 
-Supabaseを設定していない状態、またはログイン前の状態ではデモモードで動きます。
-デモモードの予定は、その端末のブラウザ内だけに保存されます。
-PCとスマホで同期するには、Supabase設定とログインが必要です。
+## GitHubへの反映
 
-## GitHub連携
-
-GitHubで空のリポジトリを作成してから、このフォルダで次を実行します。
+変更したら、このフォルダで次を実行します。
 
 ```powershell
-git init
 git add .
-git commit -m "Initial calendar app"
-git branch -M main
-git remote add origin https://github.com/YOUR_NAME/YOUR_REPOSITORY.git
-git push -u origin main
+git commit -m "変更内容を書く"
+git push
 ```
-
-`YOUR_NAME` と `YOUR_REPOSITORY` は自分のGitHub情報に置き換えてください。
 
 ## Vercel公開
 
