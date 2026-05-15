@@ -185,6 +185,7 @@ h2 {
 }
 
 .calendar-root {
+  display: flex;
   min-height: 620px;
 }
 
@@ -192,6 +193,15 @@ h2 {
 .week-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+}
+
+.month-grid {
+  grid-template-rows: auto repeat(6, minmax(118px, 1fr));
+}
+
+.week-grid {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .weekday {
@@ -205,7 +215,6 @@ h2 {
 }
 
 .day-cell {
-  min-height: 118px;
   padding: 8px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
