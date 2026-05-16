@@ -91,7 +91,7 @@ h2 {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   align-items: start;
   gap: 20px;
 }
@@ -225,10 +225,10 @@ h2 {
 
 .week-schedule {
   display: grid;
-  grid-template-columns: 64px repeat(7, minmax(96px, 1fr));
+  grid-template-columns: 56px repeat(7, minmax(72px, 1fr));
   grid-template-rows: 52px auto;
   width: 100%;
-  min-width: 860px;
+  min-width: 0;
 }
 
 .week-time-corner,
@@ -276,7 +276,7 @@ h2 {
 
 .time-label {
   height: 56px;
-  padding: 4px 8px 0 0;
+  padding: 4px 6px 0 0;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
