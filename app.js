@@ -223,7 +223,13 @@ function renderWeek() {
     if (toDateKey(date) === toDateKey(new Date())) header.classList.add("today");
     if (date.getDay() === 0) header.classList.add("sunday");
     if (date.getDay() === 6) header.classList.add("saturday");
-    header.innerHTML = `<span>${weekdays[date.getDay()]}</span><strong>${date.getDate()}</strong>`;
+    const weekdayLabel = document.createElement("span");
+    weekdayLabel.textContent = weekdays[date.getDay()];
+
+    const dateLabel = document.createElement("strong");
+    dateLabel.textContent = String(date.getDate());
+
+    header.append(weekdayLabel, dateLabel);
     wrapper.appendChild(header);
   }
 
@@ -302,13 +308,19 @@ function createWeekDayColumn(date) {
     els.startTime.value = getTimeFromWeekClick(event);
   });
 
-  getEventsByDate(key).forEach((item) => {
+  getWeekEventSegments(key).forEach(({ item, topMinutes, durationMinutes }) => {
     const eventButton = document.createElement("button");
     eventButton.className = "week-event";
     eventButton.type = "button";
-    eventButton.style.top = `${timeToMinutes(item.start_time) / 60 * HOUR_HEIGHT}px`;
-    eventButton.style.height = `${getEventDurationMinutes(item) / 60 * HOUR_HEIGHT}px`;
-    eventButton.innerHTML = `<strong>${formatTimeRange(item)}</strong><span>${escapeHtml(item.friend_name)}</span>`;
+    eventButton.style.top = `${topMinutes / 60 * HOUR_HEIGHT}px`;
+    eventButton.style.height = `${durationMinutes / 60 * HOUR_HEIGHT}px`;
+    const timeLabel = document.createElement("strong");
+    timeLabel.textContent = formatTimeRange(item);
+
+    const friendLabel = document.createElement("span");
+    friendLabel.textContent = item.friend_name;
+
+    eventButton.append(timeLabel, friendLabel);
     eventButton.addEventListener("click", (event) => {
       event.stopPropagation();
       openEventDialog(key, item);
@@ -355,20 +367,33 @@ function minutesToTime(totalMinutes) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-function getEventDurationMinutes(event) {
-  const start = timeToMinutes(event.start_time);
-  const end = timeToMinutes(event.end_time);
-  if (end > start) return Math.max(end - start, 30);
-  return 45;
-}
+function getWeekEventSegments(dateKey) {
+  const dayMinutes = 24 * 60;
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return state.events
+    .flatMap((event) => {
+      const start = timeToMinutes(event.start_time);
+      const end = normalizeTime(event.end_time) ? timeToMinutes(event.end_time) : null;
+
+      if (event.event_date === dateKey) {
+        if (end === null) {
+          return [{ item: event, topMinutes: start, durationMinutes: 45 }];
+        }
+
+        if (end > start) {
+          return [{ item: event, topMinutes: start, durationMinutes: Math.max(end - start, 30) }];
+        }
+
+        return [{ item: event, topMinutes: start, durationMinutes: Math.max(dayMinutes - start, 30) }];
+      }
+
+      if (end !== null && end <= start && getNextDateKey(event.event_date) === dateKey && end > 0) {
+        return [{ item: event, topMinutes: 0, durationMinutes: Math.max(end, 30) }];
+      }
+
+      return [];
+    })
+    .sort((a, b) => a.topMinutes - b.topMinutes || (a.item.start_time || "").localeCompare(b.item.start_time || ""));
 }
 
 function renderToday() {
@@ -379,8 +404,8 @@ function renderToday() {
 function isUpcomingTodayEvent(event) {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const eventMinutes = timeToMinutes(event.end_time || event.start_time);
-  return eventMinutes >= currentMinutes;
+  const startMinutes = timeToMinutes(event.start_time);
+  return startMinutes > currentMinutes;
 }
 
 function renderSearch() {
@@ -495,6 +520,12 @@ function toDateKey(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getNextDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + 1);
+  return toDateKey(date);
 }
 
 function formatJapaneseDate(date) {

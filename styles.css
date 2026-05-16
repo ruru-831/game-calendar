@@ -96,6 +96,10 @@ h2 {
   gap: 20px;
 }
 
+.calendar-column {
+  min-width: 0;
+}
+
 .calendar-section,
 .panel {
   background: var(--surface);
@@ -194,6 +198,14 @@ h2 {
   display: flex;
   min-height: 620px;
   overflow: auto;
+}
+
+.calendar-note {
+  margin: 8px 0 0;
+  padding: 0 4px;
+  color: #9aa4af;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .month-grid,
