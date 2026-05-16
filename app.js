@@ -72,7 +72,6 @@ function bindEvents() {
 
 function setDefaultDates() {
   const today = toDateKey(new Date());
-  els.searchDate.value = today;
   els.eventDate.value = today;
 }
 
@@ -410,7 +409,7 @@ function isUpcomingTodayEvent(event) {
 
 function renderSearch() {
   if (!els.searchDate.value) {
-    els.searchResult.textContent = "日付を選んでください";
+    els.searchResult.textContent = "日付を入力してください";
     els.searchResult.classList.add("empty");
     return;
   }
