@@ -699,7 +699,7 @@ label {
 
 @media (max-width: 720px) {
   .app-shell {
-    padding: 14px;
+    padding: 12px;
   }
 
   .topbar,
@@ -713,35 +713,161 @@ label {
     font-size: 25px;
   }
 
+  h2 {
+    font-size: 16px;
+  }
+
+  .toolbar {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .toolbar-spacer {
+    display: none;
+  }
+
   .toolbar h2 {
-    text-align: left;
+    text-align: center;
   }
 
   .period-nav {
     justify-content: center;
+    width: 100%;
   }
 
   .period-nav h2 {
+    flex: 1;
     text-align: center;
+  }
+
+  .view-switch {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .view-switch .segmented {
+    flex: 1;
+  }
+
+  .calendar-root {
+    min-height: 0;
+    overflow-x: auto;
+  }
+
+  .month-grid {
+    min-width: 0;
+    grid-template-rows: auto repeat(6, minmax(82px, auto));
+  }
+
+  .weekday {
+    padding: 8px 2px;
+    font-size: 12px;
+  }
+
+  .day-cell {
+    padding: 5px;
+  }
+
+  .date-number {
+    font-size: 12px;
+  }
+
+  .event-chip {
+    padding: 3px 4px;
+    font-size: 10px;
+  }
+
+  .week-schedule {
+    min-width: 760px;
   }
 
   .side-panel {
     display: flex;
+    flex-direction: column;
     height: auto;
+    gap: 12px;
   }
 
-  .month-grid,
-  .week-grid {
-    min-width: 760px;
+  .panel {
+    overflow: visible;
   }
 
-  .calendar-root {
-    overflow-x: auto;
+  .today-panel,
+  .search-panel,
+  .notification-panel {
+    grid-template-rows: auto;
+  }
+
+  .notification-panel .search-row,
+  .notification-panel .muted {
+    grid-row: auto;
+    align-self: auto;
+  }
+
+  .today-panel .event-list,
+  .search-panel .event-list {
+    max-height: 260px;
+  }
+
+  .search-panel .search-row,
+  .notification-panel .search-row {
+    align-items: stretch;
+  }
+
+  .button,
+  .search-row button,
+  .notification-panel .search-row button {
+    flex: none;
+    width: 100%;
+  }
+
+  .search-panel .search-row button {
+    flex: none;
+    height: 40px;
+    min-height: 40px;
   }
 
   .two-cols,
   .search-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .event-friend {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  .dialog {
+    width: calc(100% - 16px);
+  }
+
+  .dialog form {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell {
+    padding: 8px;
+  }
+
+  .month-grid {
+    grid-template-rows: auto repeat(6, minmax(74px, auto));
+  }
+
+  .day-cell {
+    padding: 4px;
+  }
+
+  .event-chip {
+    font-size: 9px;
   }
 }
