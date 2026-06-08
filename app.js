@@ -1,12 +1,43 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getFirestore,
+  onSnapshot,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
 const STORAGE_KEY = "game-friend-calendar-events";
+const SYNC_META_KEY = "game-friend-calendar-sync-meta";
 const HOUR_HEIGHT = 56;
+const DEFAULT_REMINDER_MINUTES = 5;
 
 const state = {
+  localEvents: [],
+  remoteEvents: [],
   events: [],
   currentDate: new Date(),
   lastDateKey: toDateKey(new Date()),
   view: "month",
-  notifiedKeys: new Set()
+  notifiedKeys: new Set(),
+  syncMeta: loadSyncMeta(),
+  user: null,
+  authReady: false,
+  firebaseReady: false,
+  remoteLoaded: false,
+  syncError: "",
+  auth: null,
+  db: null,
+  unsubscribeEvents: null
 };
 
 const els = {
@@ -35,17 +66,24 @@ const els = {
   endTime: document.querySelector("#endTime"),
   friendName: document.querySelector("#friendName"),
   memo: document.querySelector("#memo"),
-  deleteEventBtn: document.querySelector("#deleteEventBtn")
+  deleteEventBtn: document.querySelector("#deleteEventBtn"),
+  authStatus: document.querySelector("#authStatus"),
+  syncStatus: document.querySelector("#syncStatus"),
+  modeMessage: document.querySelector("#modeMessage"),
+  googleLoginBtn: document.querySelector("#googleLoginBtn"),
+  logoutBtn: document.querySelector("#logoutBtn"),
+  migrateBtn: document.querySelector("#migrateBtn")
 };
 
 const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
 init();
 
-function init() {
-  loadEvents();
+async function init() {
+  loadLocalEvents();
   bindEvents();
   setDefaultDates();
+  reconcileVisibleEvents();
   render();
   syncSidePanelHeight();
   window.addEventListener("resize", syncSidePanelHeight);
@@ -54,6 +92,7 @@ function init() {
   setInterval(checkDateChange, 60000);
   setInterval(renderToday, 60000);
   setInterval(checkReminders, 30000);
+  await setupFirebase();
 }
 
 function bindEvents() {
@@ -68,6 +107,9 @@ function bindEvents() {
   els.searchBtn.addEventListener("click", renderSearch);
   els.searchDate.addEventListener("change", renderSearch);
   els.notificationBtn.addEventListener("click", requestNotificationPermission);
+  els.googleLoginBtn.addEventListener("click", handleGoogleLogin);
+  els.logoutBtn.addEventListener("click", handleLogout);
+  els.migrateBtn.addEventListener("click", handleMigrateToFirebase);
 }
 
 function setDefaultDates() {
@@ -75,57 +117,450 @@ function setDefaultDates() {
   els.eventDate.value = today;
 }
 
-function loadEvents() {
+function loadLocalEvents() {
   try {
-    state.events = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    state.localEvents = Array.isArray(parsed) ? parsed.map(normalizeEvent).filter(Boolean).sort(sortEvents) : [];
   } catch (_error) {
-    state.events = [];
+    state.localEvents = [];
   }
 }
 
-function persistEvents() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.events));
+function persistLocalEvents() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.localEvents));
   state.notifiedKeys.clear();
 }
 
-function handleSaveEvent(event) {
+function loadSyncMeta() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SYNC_META_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function persistSyncMeta() {
+  localStorage.setItem(SYNC_META_KEY, JSON.stringify(state.syncMeta));
+}
+
+function getUserMeta(uid = state.user?.uid) {
+  if (!uid) return { migrationCompleted: false };
+  return state.syncMeta[uid] || { migrationCompleted: false };
+}
+
+function ensureUserMeta(uid) {
+  if (!uid) return;
+
+  const current = state.syncMeta[uid] || {};
+  if (Array.isArray(current.pendingLocalIds)) return;
+
+  state.syncMeta[uid] = {
+    migrationCompleted: Boolean(current.migrationCompleted),
+    pendingLocalIds: current.migrationCompleted ? [] : state.localEvents.map((item) => item.id)
+  };
+  persistSyncMeta();
+}
+
+function setMigrationCompleted(uid) {
+  if (!uid) return;
+  state.syncMeta[uid] = {
+    ...(state.syncMeta[uid] || {}),
+    migrationCompleted: true,
+    pendingLocalIds: []
+  };
+  persistSyncMeta();
+}
+
+function getPendingLocalIds(uid = state.user?.uid) {
+  return getUserMeta(uid).pendingLocalIds || [];
+}
+
+function isPendingLocalEventId(eventId) {
+  return getPendingLocalIds().includes(eventId);
+}
+
+function removePendingLocalId(eventId, uid = state.user?.uid) {
+  if (!uid) return;
+  const nextIds = getPendingLocalIds(uid).filter((id) => id !== eventId);
+  state.syncMeta[uid] = {
+    ...getUserMeta(uid),
+    pendingLocalIds: nextIds
+  };
+  persistSyncMeta();
+}
+
+function normalizeEvent(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const id = String(raw.id || "").trim();
+  const eventDate = String(raw.event_date || "").trim();
+  const friendName = String(raw.friend_name || "").trim();
+
+  if (!id || !eventDate || !friendName) return null;
+
+  const startTime = normalizeTime(raw.start_time);
+  const endTime = normalizeTime(raw.end_time);
+  const reminder = sanitizeReminder(raw.reminder_minutes);
+  const createdAt = String(raw.created_at || new Date().toISOString());
+  const updatedAt = String(raw.updated_at || createdAt);
+
+  return {
+    id,
+    event_date: eventDate,
+    start_time: startTime || null,
+    end_time: endTime || null,
+    friend_name: friendName.slice(0, 80),
+    memo: String(raw.memo || "").slice(0, 500),
+    reminder_minutes: reminder,
+    created_at: createdAt,
+    updated_at: updatedAt
+  };
+}
+
+function sanitizeReminder(value) {
+  const allowed = [0, 5, 10, 30, 60];
+  const numeric = Number(value);
+  return allowed.includes(numeric) ? numeric : DEFAULT_REMINDER_MINUTES;
+}
+
+function upsertLocalEvent(nextEvent) {
+  const index = state.localEvents.findIndex((item) => item.id === nextEvent.id);
+  if (index >= 0) {
+    state.localEvents[index] = nextEvent;
+  } else {
+    state.localEvents.push(nextEvent);
+  }
+  state.localEvents.sort(sortEvents);
+  persistLocalEvents();
+}
+
+function removeLocalEvent(id) {
+  state.localEvents = state.localEvents.filter((item) => item.id !== id);
+  persistLocalEvents();
+  removePendingLocalId(id);
+}
+
+function sortEvents(a, b) {
+  return (
+    a.event_date.localeCompare(b.event_date) ||
+    (a.start_time || "").localeCompare(b.start_time || "") ||
+    a.friend_name.localeCompare(b.friend_name) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+function mergeEvents(primaryEvents, secondaryEvents) {
+  const merged = new Map();
+  secondaryEvents.forEach((item) => merged.set(item.id, item));
+  primaryEvents.forEach((item) => merged.set(item.id, item));
+  return Array.from(merged.values()).sort(sortEvents);
+}
+
+function reconcileVisibleEvents() {
+  state.events = deriveVisibleEvents();
+  state.notifiedKeys.clear();
+  renderSyncState();
+}
+
+function deriveVisibleEvents() {
+  if (!state.user || !state.firebaseReady) {
+    return state.localEvents.map((item) => ({ ...item }));
+  }
+
+  if (hasPendingMigration()) {
+    return mergeEvents(state.remoteEvents, state.localEvents);
+  }
+
+  if (!state.remoteLoaded) {
+    return state.localEvents.map((item) => ({ ...item }));
+  }
+
+  return state.remoteEvents.map((item) => ({ ...item }));
+}
+
+function hasPendingMigration() {
+  if (!state.user) return false;
+  if (getUserMeta().migrationCompleted) return false;
+  return getPendingLocalIds().length > 0;
+}
+
+function isRemoteEventId(eventId) {
+  return state.remoteEvents.some((item) => item.id === eventId);
+}
+
+function shouldSyncEvent(nextEvent, previousLocalEvent) {
+  if (!state.user || !state.firebaseReady) return false;
+  if (getUserMeta().migrationCompleted) return true;
+  if (!previousLocalEvent) return true;
+  if (isPendingLocalEventId(nextEvent.id)) return false;
+  return isRemoteEventId(nextEvent.id);
+}
+
+function shouldDeleteRemotely(eventId) {
+  if (!state.user || !state.firebaseReady) return false;
+  if (getUserMeta().migrationCompleted) return true;
+  return isRemoteEventId(eventId);
+}
+
+async function setupFirebase() {
+  if (!hasFirebaseConfig(firebaseConfig)) {
+    state.authReady = true;
+    renderSyncState();
+    render();
+    return;
+  }
+
+  try {
+    const app = initializeApp(firebaseConfig);
+    state.auth = getAuth(app);
+    state.db = getFirestore(app);
+    state.firebaseReady = true;
+
+    onAuthStateChanged(state.auth, (user) => {
+      if (typeof state.unsubscribeEvents === "function") {
+        state.unsubscribeEvents();
+      }
+
+      state.user = user;
+      state.remoteEvents = [];
+      state.remoteLoaded = !user;
+      state.syncError = "";
+      state.unsubscribeEvents = null;
+      state.authReady = true;
+
+      if (user) {
+        ensureUserMeta(user.uid);
+        subscribeToRemoteEvents(user.uid);
+      }
+
+      reconcileVisibleEvents();
+      render();
+    });
+  } catch (error) {
+    console.error(error);
+    state.syncError = "Firebaseの初期化に失敗しました。";
+    state.authReady = true;
+    renderSyncState();
+    render();
+  }
+}
+
+function subscribeToRemoteEvents(uid) {
+  const eventsRef = collection(state.db, "users", uid, "events");
+  state.unsubscribeEvents = onSnapshot(
+    eventsRef,
+    (snapshot) => {
+      state.remoteEvents = snapshot.docs
+        .map((item) => normalizeEvent({ id: item.id, ...item.data() }))
+        .filter(Boolean)
+        .sort(sortEvents);
+      state.remoteLoaded = true;
+      state.syncError = "";
+
+      reconcileVisibleEvents();
+      render();
+    },
+    (error) => {
+      console.error(error);
+      state.syncError = "Firebaseとの同期に失敗しました。";
+      state.remoteLoaded = true;
+      reconcileVisibleEvents();
+      render();
+    }
+  );
+}
+
+function hasFirebaseConfig(config) {
+  if (!config || typeof config !== "object") return false;
+  const requiredKeys = ["apiKey", "authDomain", "projectId", "appId"];
+  return requiredKeys.every((key) => {
+    const value = String(config[key] || "").trim();
+    return value && !value.startsWith("YOUR_");
+  });
+}
+
+async function handleGoogleLogin() {
+  if (!state.firebaseReady || !state.auth) {
+    alert("Firebase設定が未完了のため、Googleログインを開始できません。");
+    return;
+  }
+
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(state.auth, provider);
+  } catch (error) {
+    console.error(error);
+    alert("Googleログインに失敗しました。ポップアップブロックや承認設定を確認してください。");
+  }
+}
+
+async function handleLogout() {
+  if (!state.auth) return;
+
+  try {
+    await signOut(state.auth);
+  } catch (error) {
+    console.error(error);
+    alert("ログアウトに失敗しました。");
+  }
+}
+
+async function handleMigrateToFirebase() {
+  if (!state.user || !state.db) return;
+  if (!state.localEvents.length) {
+    alert("移行するローカル予定はありません。");
+    return;
+  }
+
+  const confirmed = confirm("ローカル予定をFirebaseに移行します。localStorageのデータは削除されません。続行しますか？");
+  if (!confirmed) return;
+
+  try {
+    const writes = state.localEvents.map((eventItem) =>
+      setDoc(doc(state.db, "users", state.user.uid, "events", eventItem.id), eventItem, { merge: true })
+    );
+
+    await Promise.all(writes);
+    setMigrationCompleted(state.user.uid);
+    reconcileVisibleEvents();
+    render();
+    alert("ローカル予定をFirebaseへ移行しました。");
+  } catch (error) {
+    console.error(error);
+    alert("Firebaseへの移行に失敗しました。");
+  }
+}
+
+async function writeRemoteEvent(eventItem) {
+  await setDoc(doc(state.db, "users", state.user.uid, "events", eventItem.id), eventItem);
+}
+
+async function deleteRemoteEvent(eventId) {
+  await deleteDoc(doc(state.db, "users", state.user.uid, "events", eventId));
+}
+
+async function handleSaveEvent(event) {
   event.preventDefault();
 
   const id = els.eventId.value || crypto.randomUUID();
   const now = new Date().toISOString();
-  const nextEvent = {
+  const previousLocalEvent = state.localEvents.find((item) => item.id === id) || null;
+  const previousRemoteEvent = state.remoteEvents.find((item) => item.id === id) || null;
+  const previousEvent = previousLocalEvent || previousRemoteEvent;
+
+  const nextEvent = normalizeEvent({
     id,
     event_date: els.eventDate.value,
     start_time: els.startTime.value || null,
     end_time: els.endTime.value || null,
     friend_name: els.friendName.value.trim(),
     memo: els.memo.value.trim(),
-    reminder_minutes: Number(els.reminderMinutes.value),
-    created_at: now,
+    reminder_minutes: sanitizeReminder(els.reminderMinutes.value),
+    created_at: previousEvent?.created_at || now,
     updated_at: now
-  };
+  });
 
-  const index = state.events.findIndex((item) => item.id === id);
-  if (index >= 0) {
-    nextEvent.created_at = state.events[index].created_at || now;
-    state.events[index] = nextEvent;
-  } else {
-    state.events.push(nextEvent);
+  if (!nextEvent) {
+    alert("予定データが不正です。入力内容を確認してください。");
+    return;
   }
 
-  persistEvents();
+  upsertLocalEvent(nextEvent);
+  reconcileVisibleEvents();
   els.eventDialog.close();
   render();
+
+  if (!shouldSyncEvent(nextEvent, previousLocalEvent)) {
+    return;
+  }
+
+  try {
+    await writeRemoteEvent(nextEvent);
+  } catch (error) {
+    console.error(error);
+    state.syncError = "Firebaseへの保存に失敗しました。ローカルには保存されています。";
+    renderSyncState();
+    render();
+  }
 }
 
-function handleDeleteEvent() {
+async function handleDeleteEvent() {
   const id = els.eventId.value;
   if (!id || !confirm("この予定を削除しますか？")) return;
 
-  state.events = state.events.filter((item) => item.id !== id);
-  persistEvents();
+  removeLocalEvent(id);
+  reconcileVisibleEvents();
   els.eventDialog.close();
   render();
+
+  if (!shouldDeleteRemotely(id)) {
+    return;
+  }
+
+  try {
+    await deleteRemoteEvent(id);
+  } catch (error) {
+    console.error(error);
+    state.syncError = "Firebaseからの削除に失敗しました。ローカルでは削除済みです。";
+    renderSyncState();
+    render();
+  }
+}
+
+function renderSyncState() {
+  if (!state.firebaseReady) {
+    els.authStatus.textContent = state.syncError || "Firebase未設定のため、現在はローカル保存のみです。";
+    els.syncStatus.textContent = "この端末の予定は localStorage に保存されます。";
+    els.modeMessage.textContent = "この端末の予定は localStorage に保存されます。";
+    els.googleLoginBtn.classList.remove("hidden");
+    els.googleLoginBtn.disabled = true;
+    els.logoutBtn.classList.add("hidden");
+    els.migrateBtn.classList.add("hidden");
+    return;
+  }
+
+  els.googleLoginBtn.disabled = false;
+
+  if (!state.authReady) {
+    els.authStatus.textContent = "認証状態を確認しています。";
+    els.syncStatus.textContent = "しばらくお待ちください。";
+    els.modeMessage.textContent = "認証状態を確認しています。";
+    els.googleLoginBtn.classList.add("hidden");
+    els.logoutBtn.classList.add("hidden");
+    els.migrateBtn.classList.add("hidden");
+    return;
+  }
+
+  if (!state.user) {
+    els.authStatus.textContent = "Googleでログインすると、PCとスマホで同じ予定を見られます。";
+    els.syncStatus.textContent = "未ログインのため、現在はローカル保存のみです。";
+    els.modeMessage.textContent = "未ログインのため、この端末の予定だけを表示しています。";
+    els.googleLoginBtn.classList.remove("hidden");
+    els.logoutBtn.classList.add("hidden");
+    els.migrateBtn.classList.add("hidden");
+    return;
+  }
+
+  els.authStatus.textContent = state.user.email || "Googleアカウントでログイン中です。";
+  els.googleLoginBtn.classList.add("hidden");
+  els.logoutBtn.classList.remove("hidden");
+
+  if (state.syncError) {
+    els.syncStatus.textContent = state.syncError;
+    els.modeMessage.textContent = state.syncError;
+  } else if (hasPendingMigration()) {
+    els.syncStatus.textContent = "ローカル予定は保持中です。移行ボタンを押したときだけFirebaseへ移します。";
+    els.modeMessage.textContent = "未移行のローカル予定を含めて表示中です。移行後はFirebase同期が正本になります。";
+  } else if (!state.remoteLoaded) {
+    els.syncStatus.textContent = "Firebaseから予定を読み込み中です。";
+    els.modeMessage.textContent = "Firebaseから予定を読み込み中です。";
+  } else {
+    els.syncStatus.textContent = "Firebase同期が有効です。";
+    els.modeMessage.textContent = "Firebase同期中です。別端末の変更も反映されます。";
+  }
+
+  els.migrateBtn.classList.toggle("hidden", !hasPendingMigration());
 }
 
 function setView(view) {
@@ -151,6 +586,7 @@ function render() {
   if (state.view === "week") renderWeek();
   renderToday();
   renderSearch();
+  renderSyncState();
   syncSidePanelHeight();
 }
 
@@ -222,6 +658,7 @@ function renderWeek() {
     if (toDateKey(date) === toDateKey(new Date())) header.classList.add("today");
     if (date.getDay() === 0) header.classList.add("sunday");
     if (date.getDay() === 6) header.classList.add("saturday");
+
     const weekdayLabel = document.createElement("span");
     weekdayLabel.textContent = weekdays[date.getDay()];
 
@@ -286,8 +723,8 @@ function createDayCell(date, isMuted) {
     chip.className = "event-chip";
     chip.type = "button";
     chip.textContent = `${formatTimeRange(item)} ${item.friend_name}`;
-    chip.addEventListener("click", (event) => {
-      event.stopPropagation();
+    chip.addEventListener("click", (clickEvent) => {
+      clickEvent.stopPropagation();
       openEventDialog(key, item);
     });
     cell.appendChild(chip);
@@ -302,17 +739,18 @@ function createWeekDayColumn(date) {
   column.className = "week-day-column";
   column.style.height = `${HOUR_HEIGHT * 24}px`;
   if (key === toDateKey(new Date())) column.classList.add("today");
-  column.addEventListener("click", (event) => {
+  column.addEventListener("click", (clickEvent) => {
     openEventDialog(key);
-    els.startTime.value = getTimeFromWeekClick(event);
+    els.startTime.value = getTimeFromWeekClick(clickEvent);
   });
 
   getWeekEventSegments(key).forEach(({ item, topMinutes, durationMinutes }) => {
     const eventButton = document.createElement("button");
     eventButton.className = "week-event";
     eventButton.type = "button";
-    eventButton.style.top = `${topMinutes / 60 * HOUR_HEIGHT}px`;
-    eventButton.style.height = `${durationMinutes / 60 * HOUR_HEIGHT}px`;
+    eventButton.style.top = `${(topMinutes / 60) * HOUR_HEIGHT}px`;
+    eventButton.style.height = `${(durationMinutes / 60) * HOUR_HEIGHT}px`;
+
     const timeLabel = document.createElement("strong");
     timeLabel.textContent = formatTimeRange(item);
 
@@ -320,8 +758,8 @@ function createWeekDayColumn(date) {
     friendLabel.textContent = item.friend_name;
 
     eventButton.append(timeLabel, friendLabel);
-    eventButton.addEventListener("click", (event) => {
-      event.stopPropagation();
+    eventButton.addEventListener("click", (clickEvent) => {
+      clickEvent.stopPropagation();
       openEventDialog(key, item);
     });
     column.appendChild(eventButton);
@@ -342,7 +780,7 @@ function updateCurrentTimeLine() {
 
   const now = new Date();
   const minutes = now.getHours() * 60 + now.getMinutes();
-  line.style.top = `${minutes / 60 * HOUR_HEIGHT}px`;
+  line.style.top = `${(minutes / 60) * HOUR_HEIGHT}px`;
 }
 
 function timeToMinutes(value) {
@@ -355,7 +793,7 @@ function timeToMinutes(value) {
 function getTimeFromWeekClick(event) {
   const rect = event.currentTarget.getBoundingClientRect();
   const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
-  const rawMinutes = y / HOUR_HEIGHT * 60;
+  const rawMinutes = (y / HOUR_HEIGHT) * 60;
   const roundedMinutes = Math.min(23 * 60 + 30, Math.floor(rawMinutes / 30) * 30);
   return minutesToTime(roundedMinutes);
 }
@@ -370,24 +808,24 @@ function getWeekEventSegments(dateKey) {
   const dayMinutes = 24 * 60;
 
   return state.events
-    .flatMap((event) => {
-      const start = timeToMinutes(event.start_time);
-      const end = normalizeTime(event.end_time) ? timeToMinutes(event.end_time) : null;
+    .flatMap((eventItem) => {
+      const start = timeToMinutes(eventItem.start_time);
+      const end = normalizeTime(eventItem.end_time) ? timeToMinutes(eventItem.end_time) : null;
 
-      if (event.event_date === dateKey) {
+      if (eventItem.event_date === dateKey) {
         if (end === null) {
-          return [{ item: event, topMinutes: start, durationMinutes: 45 }];
+          return [{ item: eventItem, topMinutes: start, durationMinutes: 45 }];
         }
 
         if (end > start) {
-          return [{ item: event, topMinutes: start, durationMinutes: Math.max(end - start, 30) }];
+          return [{ item: eventItem, topMinutes: start, durationMinutes: Math.max(end - start, 30) }];
         }
 
-        return [{ item: event, topMinutes: start, durationMinutes: Math.max(dayMinutes - start, 30) }];
+        return [{ item: eventItem, topMinutes: start, durationMinutes: Math.max(dayMinutes - start, 30) }];
       }
 
-      if (end !== null && end <= start && getNextDateKey(event.event_date) === dateKey && end > 0) {
-        return [{ item: event, topMinutes: 0, durationMinutes: Math.max(end, 30) }];
+      if (end !== null && end <= start && getNextDateKey(eventItem.event_date) === dateKey && end > 0) {
+        return [{ item: eventItem, topMinutes: 0, durationMinutes: Math.max(end, 30) }];
       }
 
       return [];
@@ -400,16 +838,16 @@ function renderToday() {
   renderEventList(els.todayList, items);
 }
 
-function isUpcomingTodayEvent(event) {
+function isUpcomingTodayEvent(eventItem) {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const startMinutes = timeToMinutes(event.start_time);
+  const startMinutes = timeToMinutes(eventItem.start_time);
   return startMinutes > currentMinutes;
 }
 
 function renderSearch() {
   if (!els.searchDate.value) {
-    els.searchResult.textContent = "日付を入力してください";
+    els.searchResult.textContent = "日付を選んでください";
     els.searchResult.classList.add("empty");
     return;
   }
@@ -454,20 +892,21 @@ function renderEventList(root, items) {
 }
 
 function openEventDialog(dateKey, item = null) {
-  els.dialogTitle.textContent = item ? "予定編集" : "予定追加";
+  els.dialogTitle.textContent = item ? "予定を編集" : "予定を追加";
   els.eventId.value = item?.id || "";
   els.eventDate.value = item?.event_date || dateKey;
   els.startTime.value = normalizeTime(item?.start_time) || "";
   els.endTime.value = normalizeTime(item?.end_time) || "";
   els.friendName.value = item?.friend_name || "";
   els.memo.value = item?.memo || "";
+  els.reminderMinutes.value = String(sanitizeReminder(item?.reminder_minutes));
   els.deleteEventBtn.classList.toggle("hidden", !item);
   els.eventDialog.showModal();
 }
 
 function getEventsByDate(dateKey) {
   return state.events
-    .filter((event) => event.event_date === dateKey)
+    .filter((eventItem) => eventItem.event_date === dateKey)
     .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
 }
 
@@ -485,29 +924,29 @@ function checkReminders() {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
 
   const now = new Date();
-  state.events.forEach((event) => {
-    if (!event.start_time) return;
+  state.events.forEach((eventItem) => {
+    if (!eventItem.start_time) return;
 
-    const remindAt = new Date(`${event.event_date}T${normalizeTime(event.start_time)}`);
-    remindAt.setMinutes(remindAt.getMinutes() - Number(event.reminder_minutes || 0));
+    const remindAt = new Date(`${eventItem.event_date}T${normalizeTime(eventItem.start_time)}`);
+    remindAt.setMinutes(remindAt.getMinutes() - Number(eventItem.reminder_minutes || 0));
 
     const diff = Math.abs(now.getTime() - remindAt.getTime());
-    const key = `${event.id}:${event.event_date}:${event.start_time}`;
+    const key = `${eventItem.id}:${eventItem.event_date}:${eventItem.start_time}`;
     if (diff <= 30000 && !state.notifiedKeys.has(key)) {
       state.notifiedKeys.add(key);
       new Notification("ゲーム予定の時間です", {
-        body: `${formatTimeRange(event)} ${event.friend_name}`
+        body: `${formatTimeRange(eventItem)} ${eventItem.friend_name}`
       });
     }
   });
 }
 
-function formatTimeRange(event) {
-  const start = normalizeTime(event.start_time);
-  const end = normalizeTime(event.end_time);
+function formatTimeRange(eventItem) {
+  const start = normalizeTime(eventItem.start_time);
+  const end = normalizeTime(eventItem.end_time);
   if (start && end) return `${start}-${end}`;
   if (start) return start;
-  return "時間未設定";
+  return "時刻未設定";
 }
 
 function normalizeTime(value) {

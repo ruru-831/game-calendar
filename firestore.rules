@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/events/{eventId} {
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && eventId.size() > 0
+        && eventId.size() <= 120
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'event_date',
+          'start_time',
+          'end_time',
+          'friend_name',
+          'memo',
+          'reminder_minutes',
+          'created_at',
+          'updated_at'
+        ])
+        && request.resource.data.id == eventId
+        && request.resource.data.id is string
+        && request.resource.data.id.size() > 0
+        && request.resource.data.id.size() <= 120
+        && request.resource.data.event_date is string
+        && request.resource.data.event_date.size() == 10
+        && request.resource.data.event_date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (
+          request.resource.data.start_time == null
+          || (
+            request.resource.data.start_time is string
+            && request.resource.data.start_time.size() == 5
+            && request.resource.data.start_time.matches('^([01]\\d|2[0-3]):[0-5]\\d$')
+          )
+        )
+        && (
+          request.resource.data.end_time == null
+          || (
+            request.resource.data.end_time is string
+            && request.resource.data.end_time.size() == 5
+            && request.resource.data.end_time.matches('^([01]\\d|2[0-3]):[0-5]\\d$')
+          )
+        )
+        && request.resource.data.reminder_minutes is int
+        && request.resource.data.reminder_minutes in [0, 5, 10, 30, 60]
+        && request.resource.data.friend_name is string
+        && request.resource.data.friend_name.size() > 0
+        && request.resource.data.friend_name.size() <= 80
+        && request.resource.data.memo is string
+        && request.resource.data.memo.size() <= 500
+        && request.resource.data.created_at is string
+        && request.resource.data.created_at.size() >= 20
+        && request.resource.data.created_at.size() <= 40
+        && request.resource.data.updated_at is string
+        && request.resource.data.updated_at.size() >= 20
+        && request.resource.data.updated_at.size() <= 40;
+    }
+  }
+}

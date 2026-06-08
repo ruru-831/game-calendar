@@ -423,7 +423,7 @@ h2 {
 
 .side-panel {
   display: grid;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
   gap: 12px;
   overflow: visible;
 }
@@ -434,11 +434,16 @@ h2 {
   padding: 12px;
 }
 
+.auth-panel,
 .today-panel,
 .search-panel,
 .notification-panel {
   display: grid;
   gap: 10px;
+}
+
+.auth-panel {
+  grid-template-rows: auto auto auto auto;
 }
 
 .today-panel {
@@ -518,6 +523,16 @@ h2 {
 
 .panel-heading h2 {
   margin: 0;
+}
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-actions .button {
+  width: 100%;
 }
 
 .muted {

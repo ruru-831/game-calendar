@@ -18,31 +18,42 @@
       <main class="layout">
         <div class="calendar-column">
           <section class="calendar-section">
-          <div class="toolbar">
-            <div class="toolbar-spacer"></div>
-            <div class="period-nav">
-              <button id="prevBtn" class="icon-button" aria-label="前へ">‹</button>
-              <h2 id="periodTitle">-</h2>
-              <button id="nextBtn" class="icon-button" aria-label="次へ">›</button>
+            <div class="toolbar">
+              <div class="toolbar-spacer"></div>
+              <div class="period-nav">
+                <button id="prevBtn" class="icon-button" aria-label="前へ">‹</button>
+                <h2 id="periodTitle">-</h2>
+                <button id="nextBtn" class="icon-button" aria-label="次へ">›</button>
+              </div>
+              <div class="view-switch" aria-label="表示切替">
+                <button id="monthViewBtn" class="segmented active">月</button>
+                <button id="weekViewBtn" class="segmented">週</button>
+              </div>
             </div>
-            <div class="view-switch" aria-label="表示切替">
-              <button id="monthViewBtn" class="segmented active">月</button>
-              <button id="weekViewBtn" class="segmented">週</button>
-            </div>
-          </div>
 
-          <div id="calendarRoot" class="calendar-root" aria-live="polite"></div>
+            <div id="calendarRoot" class="calendar-root" aria-live="polite"></div>
           </section>
           <p class="calendar-note">※Cookieやサイトデータを削除すると予定が消える場合があります。</p>
         </div>
 
         <aside class="side-panel">
+          <section class="panel auth-panel">
+            <h2>同期</h2>
+            <p id="authStatus" class="muted">Firebase未設定のため、現在はローカル保存のみです。</p>
+            <p id="syncStatus" class="mode-message">この端末の予定は localStorage に保存されます。</p>
+            <div class="auth-actions">
+              <button id="googleLoginBtn" class="button primary">Googleでログイン</button>
+              <button id="logoutBtn" class="button subtle hidden">ログアウト</button>
+              <button id="migrateBtn" class="button subtle hidden">ローカル予定をFirebaseに移行</button>
+            </div>
+          </section>
+
           <section class="panel today-panel">
             <div class="panel-heading">
               <h2>今日の予定</h2>
-              <button id="newEventBtn" class="button primary">予定追加</button>
+              <button id="newEventBtn" class="button primary">予定を追加</button>
             </div>
-            <p class="mode-message">予定はこの端末のブラウザ内に保存されます。</p>
+            <p id="modeMessage" class="mode-message">この端末の予定は localStorage に保存されます。</p>
             <div id="todayList" class="event-list empty">予定はありません</div>
           </section>
 
@@ -67,7 +78,7 @@
               </select>
               <button id="notificationBtn" class="button subtle">通知を許可</button>
             </div>
-            <p class="muted">アプリを開いている間<br />予定時刻の少し前にブラウザ通知します</p>
+            <p class="muted">アプリを開いている間だけ、予定時刻の少し前にブラウザ通知します。</p>
           </section>
         </aside>
       </main>
@@ -76,7 +87,7 @@
     <dialog id="eventDialog" class="dialog">
       <form id="eventForm" method="dialog">
         <div class="dialog-header">
-          <h2 id="dialogTitle">予定追加</h2>
+          <h2 id="dialogTitle">予定を追加</h2>
           <button type="button" id="closeDialogBtn" class="icon-button" aria-label="閉じる">×</button>
         </div>
         <input id="eventId" type="hidden" />
@@ -86,11 +97,11 @@
         </label>
         <div class="two-cols">
           <label>
-            開始時間
+            開始時刻
             <input id="startTime" type="time" required />
           </label>
           <label>
-            終了時間
+            終了時刻
             <input id="endTime" type="time" />
           </label>
         </div>
@@ -109,16 +120,6 @@
       </form>
     </dialog>
 
-    <template id="eventTemplate">
-      <article class="event-item">
-        <div>
-          <strong class="event-time"></strong>
-          <span class="event-friend"></span>
-        </div>
-        <p class="event-memo"></p>
-      </article>
-    </template>
-
-    <script src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>

@@ -1,60 +1,38 @@
 # Game Friend Calendar
 
-HTML/CSS/JavaScriptだけで作った、1人用のフレンド予定カレンダーです。
-ログインなしで使えます。予定はその端末のブラウザ内に保存されます。
+HTML / CSS / JavaScript だけで動く個人用カレンダーです。既存の予定は `localStorage` に保存され、今回の変更で Firebase Authentication + Cloud Firestore による個人同期にも対応しました。
 
-## ファイル構成
+## ファイル
 
-- `index.html`: 画面
+- `index.html`: 画面構成
 - `styles.css`: 見た目
-- `app.js`: カレンダー、予定管理、通知
-- `vercel.json`: Vercel用設定
+- `app.js`: カレンダー表示、予定CRUD、Firebase同期
+- `firebase-config.js`: Firebase Web SDK の設定値
+- `firestore.rules`: Firestore Security Rules
+- `vercel.json`: Vercel 設定
 
-## できること
+## 現在の仕様
 
-- 月間カレンダー
-- 週間カレンダー
-- 今日の予定
-- 日付検索
-- 予定の追加、編集、削除
-- ブラウザを開いている間の通知
+- `STORAGE_KEY = "game-friend-calendar-events"` は変更していません
+- 既存の `localStorage` データは削除しません
+- 未ログイン時はローカル保存のみ
+- Googleログイン後は本人の `users/{uid}/events/{eventId}` を使って同期
+- 初回移行は自動ではなく、`ローカル予定をFirebaseに移行` ボタンを押したときだけ実行
+- Firestore オフライン永続化はまだ入れていません
 
-## 保存について
+## Firebase 設定
 
-予定は `localStorage` に保存されます。
-そのため、同じ端末の同じブラウザでは予定が残ります。
+1. Firebase コンソールで Web アプリを作成
+2. Authentication で `Google` を有効化
+3. Firestore Database を作成
+4. `firebase-config.js` のプレースホルダーを実値に置き換え
+5. Firestore Rules に `firestore.rules` の内容を反映
+6. Authentication の `Authorized domains` に公開ドメインを追加
 
-注意点:
-
-- PCとスマホでは同期されません。
-- 別のブラウザには予定は引き継がれません。
-- ブラウザのデータを削除すると予定も消えます。
-
-## ローカル確認
-
-このフォルダで次のコマンドを実行します。
+## ローカル起動
 
 ```powershell
-python -m http.server 5173
+node server.js
 ```
 
-ブラウザで `http://localhost:5173` を開きます。
-
-## GitHubへの反映
-
-変更したら、このフォルダで次を実行します。
-
-```powershell
-git add .
-git commit -m "変更内容を書く"
-git push
-```
-
-## Vercel公開
-
-1. VercelにGitHubアカウントでログインします。
-2. Add New Projectを選びます。
-3. GitHubのこのリポジトリを選びます。
-4. Framework PresetはOtherのままで公開します。
-
-GitHubにpushすると、Vercelが自動で再公開します。
+ブラウザで `http://localhost:5173` を開いて確認します。
